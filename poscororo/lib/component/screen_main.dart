@@ -57,6 +57,17 @@ class ScanscreenState extends State<Scanscreen> {
   String currentTemp;
   String currentHumi;
   String resultText = '';
+  Future<bool> enableInternet() async {
+    Socket socket = await Socket.connect('52.78.191.70', 9971)
+        .timeout(Duration(seconds: 3));
+    print('port Number');
+    print(socket.port);
+    socket.close();
+    if (socket != null) {
+      return true;
+    } else
+      return false;
+  }
 
   bool isConnectedState() {
     bool temp = false;
@@ -71,7 +82,7 @@ class ScanscreenState extends State<Scanscreen> {
     }
 
     // return temp;
-    if (count > 2) {
+    if (count >= 2) {
       return true;
     } else {
       return false;
@@ -127,7 +138,8 @@ class ScanscreenState extends State<Scanscreen> {
       List<LogData> list, String devicename, int battery) async {
     // var client = http.Client();
     // print(socket.port);
-    Socket socket = await Socket.connect('52.78.191.70', 9971);
+    Socket socket = await Socket.connect('52.78.191.70', 9971)
+        .timeout(Duration(seconds: 3));
     print('port Number');
     print(socket.port);
     if (socket != null) {
@@ -155,32 +167,90 @@ class ScanscreenState extends State<Scanscreen> {
       print('Fail Send to Server');
       return 'fail';
     }
+  }
 
-    // try {
-    //   for (int i = 0; i < list.length; i++) {
-    //     print('$i send');
-    //     var uriResponse = await client
-    //         .post('http://175.126.232.236/_API/saveData.php', body: {
-    //       "isRegularData": "true",
-    //       "tra_datetime": list[i].timestamp.toString(),
-    //       "tra_temp": list[i].temperature.toString(),
-    //       "tra_humidity": list[i].humidity.toString(),
-    //       "tra_lat": "",
-    //       "tra_lon": "",
-    //       "de_number": devicename,
-    //       "tra_battery": battery.toString(),
-    //       "tra_impact": ""
-    //     });
-    //     print(await client.get(uriResponse.body.toString()));
-    //   }
-    // } catch (e) {
-    //   print('HTTP에러발생에러발생에러발생에러발생에러발생에러발생');
-    //   print(e);
-    //   return null;
-    // } finally {
-    //   print('send !');
-    //   client.close();
-    // }
+  Future<String> sendtoServer_one(
+      LogData list, String devicename, int battery, int index) async {
+    // 업데이트 시간 검사
+    Peripheral peripheral = deviceList[index].peripheral;
+
+    DeviceInfo temp = await DBHelper().getDevice(peripheral.identifier);
+    if (temp.macAddress == '123') {
+      print('create');
+      await DBHelper().createData(DeviceInfo(
+          macAddress: peripheral.identifier,
+          // Init Time - 300일 전
+          lastUpdate: DateTime.now().toLocal().subtract(Duration(days: 300))));
+      setState(() {
+        deviceList[index].lastUpdateTime = null;
+      });
+    } else {
+      // print('Else 문 ?');
+      setState(() {
+        deviceList[index].lastUpdateTime = temp.lastUpdate.toLocal();
+      });
+
+      // print(temp.lastUpdate.toLocal().toString());
+      // print('이미존재함 : ' + deviceList[index].getserialNumber());
+      // print('Last Update Time1 : ' + temp.lastUpdate.toString());
+      // // TODO: 시간 수정(3개) 필수 !
+      // print('Enable Time1 : ' +
+      //     DateTime.now().toLocal().subtract(Duration(hours: 6)).toString());
+      if (temp.lastUpdate
+          .isBefore(DateTime.now().toLocal().subtract(Duration(hours: 6)))) {
+        // var client = http.Client();
+        // print(socket.port);
+        Socket socket = await Socket.connect('52.78.191.70', 9971);
+        print(socket.port);
+        if (socket != null) {
+          String body = '';
+          body += devicename +
+              '|0|' +
+              list.timestamp.toString() +
+              '|' +
+              list.timestamp.toString() +
+              '|N|0|E|0|' +
+              list.temperature.toString() +
+              '|' +
+              list.humidity.toString() +
+              '|0|0|0|' +
+              battery.toString() +
+              ';';
+
+          socket.write(body);
+
+          print('connected server & Sended to server');
+          socket.close();
+          await DBHelper().updateLastUpdate(
+              peripheral.identifier, DateTime.now().toLocal());
+          print('실행 ? ? ?');
+          setState(() {
+            deviceList[index].lastUpdateTime = DateTime.now().toLocal();
+          });
+
+          setState(() {
+            resultText =
+                '[' + deviceList[index].getserialNumber() + '] ' + '전송 완료';
+            currentState = 'end';
+          });
+
+          return 'success';
+        } else {
+          print('Fail Send to Server');
+          return 'fail';
+        }
+        // deviceList[index].connectionState = 'connecting';
+      } else {
+        print('아직 시간이 안됨 !');
+        // print('Last Update Time : ' + temp.lastUpdate.toString());
+        // print('Enable Time : ' +
+        //     DateTime.now().toLocal().subtract(Duration(hours: 6)).toString());
+        // setState(() {
+        //   deviceList[index].connectionState = 'scan';
+        // });
+
+      }
+    }
   }
 
   Future<void> monitorCharacteristic(BleDeviceItem device, flag) async {
@@ -235,14 +305,14 @@ class ScanscreenState extends State<Scanscreen> {
           if (index != -1) {
             int deference = -1;
             if (deviceList[index].lastUpdateTime == null) {
-              deference = 100000;
+              deference = 28800;
             } else {
               Duration temps = DateTime.now()
                   .toLocal()
                   .difference(deviceList[index].lastUpdateTime);
 
-              if (temps.inMinutes > 100000) {
-                deference = 100000;
+              if (temps.inMinutes > 28800) {
+                deference = 28800;
               } else {
                 deference = temps.inMinutes + 10;
               }
@@ -356,10 +426,10 @@ class ScanscreenState extends State<Scanscreen> {
             // 18 -> 4
             // 0 5 10 15 20
             int sendCount = 0;
-            if (deviceList[index].logDatas.length % 5 == 0) {
-              sendCount = deviceList[index].logDatas.length ~/ 5;
+            if (deviceList[index].logDatas.length % 10 == 0) {
+              sendCount = deviceList[index].logDatas.length ~/ 10;
             } else {
-              sendCount = (deviceList[index].logDatas.length ~/ 5) + 1;
+              sendCount = (deviceList[index].logDatas.length ~/ 10) + 1;
             }
 
             print(deviceList[index].getserialNumber() +
@@ -479,7 +549,7 @@ class ScanscreenState extends State<Scanscreen> {
   // 00:00:00
   void startTimer() {
     if (isStart == true) return;
-    const oneSec = const Duration(minutes: 30);
+    const oneSec = const Duration(minutes: 180);
     const fiveSec = const Duration(seconds: 5);
     _timer = new Timer.periodic(
       oneSec,
@@ -588,10 +658,21 @@ class ScanscreenState extends State<Scanscreen> {
                   }
                 }
                 if (index != -1) {
-                  print('여기 오냐 ?');
+                  // print('여기 오냐 ?');
                   // connect(index, 0);
                   if (!isConnectedState()) {
+                    print('Up connect !');
                     connect(index, 0);
+
+                    // LogData temp = LogData(
+                    //     humidity: deviceList[index].getHumidity(),
+                    //     temperature: deviceList[index].getTemperature(),
+                    //     timestamp: DateTime.now().toLocal());
+                    // sendtoServer_one(
+                    //     temp,
+                    //     'SENSOR_' + deviceList[index].getserialNumber(),
+                    //     deviceList[index].getBattery(),
+                    //     index);
                   }
                 }
               }
@@ -635,8 +716,13 @@ class ScanscreenState extends State<Scanscreen> {
                         scanResult.peripheral,
                         scanResult.advertisementData,
                         'scan');
+                    // if (currentItem.peripheral.identifier == 'A4:C1:38:13:78:F3' ||
+                    //     currentItem.peripheral.identifier ==
+                    //         'A4:C1:38:37:C1:12' ||
+                    //     currentItem.peripheral.identifier ==
+                    //         'A4:C1:38:19:03:92') {
                     print(currentItem.peripheral.identifier);
-                    print('인 !');
+                    // print('인 !');
                     setState(() {
                       deviceList.add(currentItem);
                     });
@@ -650,10 +736,12 @@ class ScanscreenState extends State<Scanscreen> {
                     }
                     if (index != -1) {
                       if (!isConnectedState()) {
+                        print('Down connect !');
                         connect(index, 0);
                       }
                     }
                     // connect(deviceList.length - 1, 0);
+                    // }
                   }
                 }
               }
@@ -719,6 +807,13 @@ class ScanscreenState extends State<Scanscreen> {
       // });
       // return false;
     }
+    // bool result = await enableInternet();
+    // if (result == false) {
+    //   setState(() {
+    //     resultText = '네트워크 환경이 원활하지 않습니다.';
+    //   });
+    //   return;
+    // }
 
     //선택한 장치의 peripheral 값을 가져온다.
     Peripheral peripheral = deviceList[index].peripheral;
@@ -728,7 +823,7 @@ class ScanscreenState extends State<Scanscreen> {
       print('create');
       await DBHelper().createData(DeviceInfo(
           macAddress: peripheral.identifier,
-          // Init Time - 10일 전
+          // Init Time - 300일 전
           lastUpdate: DateTime.now().toLocal().subtract(Duration(days: 300))));
       setState(() {
         deviceList[index].lastUpdateTime = null;
@@ -868,7 +963,7 @@ class ScanscreenState extends State<Scanscreen> {
 
             setBLEState('<연결 종료>');
 
-            print('여긴 오냐');
+            // print('여긴 오냐');
             return false;
             //if (failFlag) {}
           }
@@ -1138,40 +1233,40 @@ class ScanscreenState extends State<Scanscreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     AppBar(
-                        // backgroundColor: Color.fromARGB(22, 27, 32, 1),
+                        backgroundColor: Color.fromRGBO(0x4C, 0xA5, 0xC7, 1),
                         title: Row(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          flex: 5,
-                          child: Image(
-                            image: AssetImage('images/posco.png'),
-                            fit: BoxFit.contain,
-                            // width: MediaQuery.of(context).size.width * 0.2,
-                            height: 60,
-                          ),
-                        ),
-                        Expanded(
-                          flex: 8,
-                          child: Row(
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              children: [
-                                Image(
-                                  image: AssetImage('images/logos.png'),
-                                  fit: BoxFit.contain,
-                                  width:
-                                      MediaQuery.of(context).size.width * 0.4,
-                                  // height: MediaQuery.of(context).size.width * 0.1,
-                                ),
-                              ]),
-                        ),
-                        Expanded(
-                          flex: 4,
-                          child: SizedBox(),
-                        ),
-                      ],
-                    )),
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              flex: 5,
+                              child: Image(
+                                image: AssetImage('images/posco.png'),
+                                fit: BoxFit.contain,
+                                // width: MediaQuery.of(context).size.width * 0.2,
+                                height: 60,
+                              ),
+                            ),
+                            Expanded(
+                              flex: 8,
+                              child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.start,
+                                  children: [
+                                    Image(
+                                      image: AssetImage('images/logos.png'),
+                                      fit: BoxFit.contain,
+                                      width: MediaQuery.of(context).size.width *
+                                          0.4,
+                                      // height: MediaQuery.of(context).size.width * 0.1,
+                                    ),
+                                  ]),
+                            ),
+                            Expanded(
+                              flex: 4,
+                              child: SizedBox(),
+                            ),
+                          ],
+                        )),
                   ],
                 )),
             body: WillPopScope(
