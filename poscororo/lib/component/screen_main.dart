@@ -58,15 +58,25 @@ class ScanscreenState extends State<Scanscreen> {
   String currentHumi;
   String resultText = '';
   Future<bool> enableInternet() async {
-    Socket socket = await Socket.connect('52.78.191.70', 9971)
-        .timeout(Duration(seconds: 3));
-    print('port Number');
-    print(socket.port);
-    socket.close();
-    if (socket != null) {
-      return true;
-    } else
+    try {
+      Socket socket = await Socket.connect('52.78.191.70', 9971)
+          .timeout(Duration(seconds: 3));
+      print('port Number');
+      print(socket.port);
+      if (socket != null) {
+        socket.close();
+        return true;
+      } else {
+        socket.close();
+        return false;
+      }
+    } on Error catch (e) {
+      print("error");
       return false;
+    } on Exception catch (f) {
+      print("enable Internet exception");
+      return false;
+    }
   }
 
   bool isConnectedState() {
@@ -82,7 +92,7 @@ class ScanscreenState extends State<Scanscreen> {
     }
 
     // return temp;
-    if (count >= 2) {
+    if (count > 2) {
       return true;
     } else {
       return false;
@@ -138,33 +148,40 @@ class ScanscreenState extends State<Scanscreen> {
       List<LogData> list, String devicename, int battery) async {
     // var client = http.Client();
     // print(socket.port);
-    Socket socket = await Socket.connect('52.78.191.70', 9971)
-        .timeout(Duration(seconds: 3));
-    print('port Number');
-    print(socket.port);
-    if (socket != null) {
-      for (int i = 0; i < list.length; i += 5) {
-        String body = '';
-        body += devicename +
-            '|0|' +
-            list[i].timestamp.toString() +
-            '|' +
-            list[i].timestamp.toString() +
-            '|N|0|E|0|' +
-            list[i].temperature.toString() +
-            '|' +
-            list[i].humidity.toString() +
-            '|0|0|0|' +
-            battery.toString() +
-            ';';
+    try {
+      Socket socket = await Socket.connect('52.78.191.70', 9971);
+      print('port Number');
+      print(socket.port);
 
-        socket.write(body);
+      if (socket != null) {
+        for (int i = 0; i < list.length; i += 10) {
+          String body = '';
+          body += devicename +
+              '|0|' +
+              list[i].timestamp.toString() +
+              '|' +
+              list[i].timestamp.toString() +
+              '|N|0|E|0|' +
+              list[i].temperature.toString() +
+              '|' +
+              list[i].humidity.toString() +
+              '|0|0|0|' +
+              battery.toString() +
+              ';';
+          socket.write(body);
+          socket.close();
+          print('connected server & Sended to server');
+          return 'success';
+        }
+      } else {
+        print('Fail Send to Server');
+        return 'fail';
       }
-      print('connected server & Sended to server');
-      socket.close();
-      return 'success';
-    } else {
-      print('Fail Send to Server');
+    } on Error catch (e) {
+      print("error");
+      return 'fail';
+    } on Exception catch (f) {
+      print("exception");
       return 'fail';
     }
   }
@@ -549,7 +566,7 @@ class ScanscreenState extends State<Scanscreen> {
   // 00:00:00
   void startTimer() {
     if (isStart == true) return;
-    const oneSec = const Duration(minutes: 180);
+    const oneSec = const Duration(minutes: 30);
     const fiveSec = const Duration(seconds: 5);
     _timer = new Timer.periodic(
       oneSec,
@@ -807,13 +824,16 @@ class ScanscreenState extends State<Scanscreen> {
       // });
       // return false;
     }
-    // bool result = await enableInternet();
-    // if (result == false) {
-    //   setState(() {
-    //     resultText = '네트워크 환경이 원활하지 않습니다.';
-    //   });
-    //   return;
-    // }
+    bool result =
+        await enableInternet().timeout(Duration(seconds: 5), onTimeout: () {
+      return false;
+    });
+    if (result == false) {
+      setState(() {
+        resultText = '네트워크 환경이 원활하지 않습니다.';
+      });
+      return;
+    }
 
     //선택한 장치의 peripheral 값을 가져온다.
     Peripheral peripheral = deviceList[index].peripheral;
